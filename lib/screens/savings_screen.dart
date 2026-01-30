@@ -6,6 +6,90 @@ import '../providers/finance_provider.dart';
 class SavingsScreen extends StatelessWidget {
   const SavingsScreen({super.key});
 
+  // Widget para mostrar la imagen de Quoki según el estado
+  Widget _buildQuokiImage(BuildContext context, FinanceProvider provider) {
+    String imagePath;
+    String message;
+    Color bgColor;
+
+    if (provider.savings.isEmpty) {
+      // No hay ahorros - Quoki triste
+      imagePath = 'assets/images/quoki_Triste.png';
+      message = 'No tienes metas de ahorro aún';
+      bgColor = Colors.grey.shade100;
+    } else if (provider.currentMonthSavings > 0) {
+      // Hay depósitos este mes - Quoki musculoso
+      imagePath = 'assets/images/QuokiMusculoso.png';
+      message = '¡Genial! Estás ahorrando este mes';
+      bgColor = Colors.green.withValues(alpha: 0.1);
+    } else {
+      // Hay metas pero sin dinero o completadas - Quoki normal sin fondo
+      imagePath = 'assets/images/QuokiSinFondo.png';
+      message = 'Tienes metas de ahorro establecidas';
+      bgColor = Colors.blue.withValues(alpha: 0.1);
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: bgColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          // Imagen de Quoki
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.asset(
+                imagePath,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Icon(
+                      Icons.savings_rounded,
+                      size: 60,
+                      color: Colors.grey.shade400,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<FinanceProvider>(context);
@@ -63,21 +147,16 @@ class SavingsScreen extends StatelessWidget {
         icon: const Icon(Icons.add),
         label: const Text('Nueva Meta'),
       ),
-      body: provider.savings.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.savings_rounded,
-                      size: 80, color: Colors.grey.shade300),
-                  const SizedBox(height: 16),
-                  Text('No tienes metas de ahorro.',
-                      style:
-                          TextStyle(fontSize: 18, color: Colors.grey.shade400)),
-                ],
-              ),
-            )
-          : ListView.builder(
+      body: Column(
+        children: [
+          // Imagen de Quoki según el estado
+          _buildQuokiImage(context, provider),
+          
+          // Lista de ahorros si existen
+          if (provider.savings.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Expanded(
+              child: ListView.builder(
               padding: const EdgeInsets.all(20),
               itemCount: provider.savings.length,
               itemBuilder: (ctx, index) {
@@ -322,6 +401,10 @@ class SavingsScreen extends StatelessWidget {
                 );
               },
             ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

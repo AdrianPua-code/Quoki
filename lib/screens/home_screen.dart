@@ -7,6 +7,8 @@ import '../widgets/summary_card.dart';
 import 'add_transaction_screen.dart';
 import 'savings_screen.dart';
 import 'paid_debts_screen.dart';
+import 'monthly_summary_screen.dart';
+import 'debt_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -21,7 +23,12 @@ class HomeScreen extends StatelessWidget {
     final expenses = provider.transactions
         .where((t) =>
             t.type == TransactionType.expense || t.type == TransactionType.debt)
-        .fold(0.0, (sum, t) => sum + t.amount);
+        .fold(0.0, (sum, t) {
+      if (t.hasInstallments) {
+        return sum + t.installmentAmount!;
+      }
+      return sum + t.amount;
+    });
 
     // Filter transactions to show: all except paid debts
     final displayTransactions = provider.transactions
@@ -46,6 +53,18 @@ class HomeScreen extends StatelessWidget {
                       style: TextStyle(color: Colors.white, fontSize: 24)),
                 ],
               ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history_rounded),
+              title: const Text('Resumen Mensual'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const MonthlySummaryScreen()),
+                );
+              },
             ),
             ListTile(
               leading: const Icon(Icons.refresh_rounded),
@@ -267,18 +286,33 @@ class HomeScreen extends StatelessWidget {
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 8),
                         onTap: () {
-                          Navigator.push(
+                          if (tx.type == TransactionType.debt &&
+                              tx.hasInstallments) {
+                            // Para deudas con cuotas, ir a pantalla de detalles
+                            Navigator.push(
                               context,
                               MaterialPageRoute(
-                                  builder: (_) => AddTransactionScreen(
-                                      transactionToEdit: tx)));
+                                builder: (_) => DebtDetailScreen(debt: tx),
+                              ),
+                            );
+                          } else {
+                            // Para otras transacciones, ir a edición normal
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddTransactionScreen(
+                                  transactionToEdit: tx,
+                                ),
+                              ),
+                            );
+                          }
                         },
                         leading: CircleAvatar(
                           radius: 24,
                           backgroundColor:
                               _getColorForType(tx.type).withValues(alpha: 0.2),
                           child: Icon(
-                            _getIconForType(tx.type),
+                            _getIconForType(tx.type, tx.hasInstallments),
                             color: _getColorForType(tx.type),
                             size: 24,
                           ),
@@ -286,21 +320,57 @@ class HomeScreen extends StatelessWidget {
                         title: Text(tx.title,
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(DateFormat('MMM d, y').format(tx.date),
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(DateFormat('MMM d, y').format(tx.date),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
+                            if (tx.hasInstallments) ...[
+                              const SizedBox(height: 2),
+                              Consumer<FinanceProvider>(
+                                builder: (ctx, provider, child) {
+                                  final paidInstallments =
+                                      provider.getPaidInstallments(tx.id);
+                                  final totalInstallments =
+                                      tx.totalInstallments!;
+                                  return Text(
+                                    '$paidInstallments/$totalInstallments cuotas pagadas',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color:
+                                          paidInstallments == totalInstallments
+                                              ? Colors.green
+                                              : Colors.orange,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              NumberFormat.currency(symbol: '\$')
-                                  .format(tx.amount),
+                              NumberFormat.currency(symbol: '\$').format(
+                                  tx.hasInstallments
+                                      ? tx.installmentAmount!
+                                      : tx.amount),
                               style: TextStyle(
                                   color: _getColorForType(tx.type),
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16),
                             ),
-                            if (tx.type != TransactionType.income)
+                            if (tx.type == TransactionType.debt &&
+                                tx.hasInstallments)
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: Colors.grey.shade400,
+                              )
+                            else if (tx.type != TransactionType.income)
                               Transform.scale(
                                 scale: 1.2,
                                 child: Checkbox(
@@ -337,14 +407,17 @@ class HomeScreen extends StatelessWidget {
     }
   }
 
-  IconData _getIconForType(TransactionType type) {
+  IconData _getIconForType(TransactionType type,
+      [bool hasInstallments = false]) {
     switch (type) {
       case TransactionType.income:
         return Icons.arrow_upward_rounded;
       case TransactionType.expense:
         return Icons.shopping_bag_rounded;
       case TransactionType.debt:
-        return Icons.credit_card_rounded;
+        return hasInstallments
+            ? Icons.payment_rounded
+            : Icons.credit_card_rounded;
     }
   }
 }

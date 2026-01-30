@@ -15,7 +15,10 @@ class AddTransactionScreen extends StatefulWidget {
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _titleController = TextEditingController();
   final _amountController = TextEditingController();
+  final _installmentsController = TextEditingController();
+  final _installmentAmountController = TextEditingController();
   TransactionType _selectedType = TransactionType.expense;
+  bool _hasInstallments = false;
 
   @override
   void initState() {
@@ -24,6 +27,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _titleController.text = widget.transactionToEdit!.title;
       _amountController.text = widget.transactionToEdit!.amount.toString();
       _selectedType = widget.transactionToEdit!.type;
+      _hasInstallments = widget.transactionToEdit!.hasInstallments;
+      if (_hasInstallments) {
+        _installmentsController.text = widget.transactionToEdit!.totalInstallments.toString();
+        _installmentAmountController.text = widget.transactionToEdit!.installmentAmount!.toStringAsFixed(2);
+      }
     }
   }
 
@@ -35,22 +43,73 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
     if (enteredAmount == null || enteredAmount <= 0) return;
 
-    if (widget.transactionToEdit == null) {
-      Provider.of<FinanceProvider>(context, listen: false).addTransaction(
-        title: enteredTitle,
-        amount: enteredAmount,
-        type: _selectedType,
-      );
+    // Validación específica para deudas con cuotas
+    if (_selectedType == TransactionType.debt && _hasInstallments) {
+      final installments = int.tryParse(_installmentsController.text);
+      final installmentAmount = double.tryParse(_installmentAmountController.text);
+
+      if (installments == null || installments <= 1) {
+        _showErrorDialog('Debes especificar al menos 2 cuotas para activar el plan de pagos.');
+        return;
+      }
+
+      if (installmentAmount == null || installmentAmount <= 0) {
+        _showErrorDialog('Debes especificar un monto válido para cada cuota.');
+        return;
+      }
+
+      if (widget.transactionToEdit == null) {
+        Provider.of<FinanceProvider>(context, listen: false).addDebtWithInstallments(
+          title: enteredTitle,
+          totalAmount: enteredAmount,
+          totalInstallments: installments,
+          installmentAmount: installmentAmount,
+        );
+      } else {
+        Provider.of<FinanceProvider>(context, listen: false).updateTransaction(
+          id: widget.transactionToEdit!.id,
+          title: enteredTitle,
+          amount: enteredAmount,
+          type: _selectedType,
+          totalInstallments: installments,
+          installmentAmount: installmentAmount,
+        );
+      }
     } else {
-      Provider.of<FinanceProvider>(context, listen: false).updateTransaction(
-        id: widget.transactionToEdit!.id,
-        title: enteredTitle,
-        amount: enteredAmount,
-        type: _selectedType,
-      );
+      // Para transacciones normales o deudas sin cuotas
+      if (widget.transactionToEdit == null) {
+        Provider.of<FinanceProvider>(context, listen: false).addTransaction(
+          title: enteredTitle,
+          amount: enteredAmount,
+          type: _selectedType,
+        );
+      } else {
+        Provider.of<FinanceProvider>(context, listen: false).updateTransaction(
+          id: widget.transactionToEdit!.id,
+          title: enteredTitle,
+          amount: enteredAmount,
+          type: _selectedType,
+        );
+      }
     }
 
     Navigator.of(context).pop();
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -129,9 +188,75 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 );
               }).toList(),
               onChanged: (val) {
-                if (val != null) setState(() => _selectedType = val);
+                if (val != null) {
+                  setState(() => _selectedType = val);
+                  // Si el tipo no es deuda, desactivar cuotas
+                  if (val != TransactionType.debt) {
+                    _hasInstallments = false;
+                  }
+                }
               },
             ),
+            
+            // Opción de cuotas solo para deudas
+            if (_selectedType == TransactionType.debt) ...[
+              const SizedBox(height: 20),
+              CheckboxListTile(
+                title: const Text('¿Pagar en cuotas?'),
+                subtitle: const Text('Activa para definir número de cuotas y monto mensual'),
+                value: _hasInstallments,
+                onChanged: (val) {
+                  setState(() {
+                    _hasInstallments = val ?? false;
+                    if (!_hasInstallments) {
+                      _installmentsController.clear();
+                      _installmentAmountController.clear();
+                    }
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+            
+            // Campos de cuotas
+            if (_selectedType == TransactionType.debt && _hasInstallments) ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _installmentsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Número de Cuotas',
+                        hintText: 'Ej: 12',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextField(
+                      controller: _installmentAmountController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Monto por Cuota',
+                        hintText: 'Ej: 100.00',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Total a pagar: \$${((_installmentsController.text.isNotEmpty ? int.tryParse(_installmentsController.text) ?? 1 : 1) * (_installmentAmountController.text.isNotEmpty ? double.tryParse(_installmentAmountController.text) ?? 0 : 0)).toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+            ],
+            
             const SizedBox(height: 30),
             ElevatedButton(
               onPressed: _submitData,
